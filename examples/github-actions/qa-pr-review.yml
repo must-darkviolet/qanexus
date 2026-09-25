@@ -1,0 +1,107 @@
+# QA Intelligence — review every pull request.
+#
+# Copy this file into the repository you want reviewed, as
+# .github/workflows/qa-pr-review.yml, and adjust the marked lines.
+#
+# On each pull request it checks out the PR's head, has QA Intelligence
+# analyse the diff, write or update the Playwright tests the change affects,
+# run them with every test recorded, walk the affected pages in a recorded
+# browser, and post one comment on the pull request. The comment is edited in
+# place on later pushes, and the recordings are uploaded as an artifact the
+# comment links to.
+name: QA review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# Needed to write the comment. Nothing else is granted.
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: qa-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Where the application under test will be served (see --start below).
+      APP_URL: http://localhost:3000
+      ARTIFACT_ROOT: ${{ runner.temp }}/qa-artifacts
+      WORKSPACE_ROOT: ${{ runner.temp }}/qa-workspaces
+      DATABASE_URL: sqlite:${{ runner.temp }}/qa-agent.db
+      # Analysis is deterministic unless a key is provided. To enable AI:
+      # AI_PROVIDER: gemini
+      # GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      AI_DISABLED: '1'
+
+    steps:
+      # 1. The application under test, at the pull request's head commit.
+      #    fetch-depth: 0 so the merge base can be computed.
+      - name: Check out the pull request
+        uses: actions/checkout@v4
+        with:
+          path: app
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      # 2. QA Intelligence itself. Point this at wherever you keep it.
+      - name: Check out QA Intelligence
+        uses: actions/checkout@v4
+        with:
+          repository: your-org/qa-intelligence        # <-- change me
+          path: qa
+          # token: ${{ secrets.QA_REPO_TOKEN }}       # if it is private
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install QA Intelligence
+        working-directory: qa
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      # Warms the npm cache: the review runs the application from its own
+      # fresh clone of the PR, so that clone installs its dependencies too.
+      - name: Warm the dependency cache
+        working-directory: app
+        run: npm ci
+
+      - name: Review the pull request
+        working-directory: qa
+        env:
+          # GITHUB_TOKEN carries the pull-requests: write permission above.
+          GITHUB_TOKEN: ${{ github.token }}
+          QA_ARTIFACT_NAME: qa-recordings
+          # The start command installs before serving, so allow for it.
+          PR_APP_START_TIMEOUT_MS: '600000'
+        run: |
+          npm run qa -- pr "$GITHUB_WORKSPACE/app" \
+            --number ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
+            --base-url "$APP_URL" \
+            --start "npm ci && npm run dev" \
+            --comment-file "$ARTIFACT_ROOT/pr-comment.md"
+          # Add --fail-on-failures above to make a failing test fail this check.
+
+      # 3. The recordings the comment points at. Uploaded even when the review
+      #    failed, because that is when they are most needed.
+      - name: Upload recordings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-recordings
+          path: ${{ runner.temp }}/qa-artifacts
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Summary
+        if: always()
+        run: cat "$ARTIFACT_ROOT/pr-comment.md" >> "$GITHUB_STEP_SUMMARY" || true

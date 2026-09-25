@@ -1,0 +1,34 @@
+{
+  "name": "qa-pr-review-agent",
+  "private": true,
+  "version": "0.1.0",
+  "description": "An AI QA engineer that reviews pull requests: reads the PR and its diff, analyses what it affects, writes or updates Playwright tests, runs them with the browser recorded, and comments the result on the pull request.",
+  "workspaces": [
+    "packages/shared",
+    "packages/backend",
+    "packages/frontend"
+  ],
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "npm run build -w @qa-agent/shared && npm run build -w @qa-agent/backend && npm run build -w @qa-agent/frontend",
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev -w @qa-agent/backend\" \"npm run dev -w @qa-agent/frontend\"",
+    "start": "npm run start -w @qa-agent/backend",
+    "migrate": "npm run migrate -w @qa-agent/backend",
+    "test": "npm run test -w @qa-agent/backend",
+    "typecheck": "npm run typecheck -w @qa-agent/shared && npm run typecheck -w @qa-agent/backend && npm run typecheck -w @qa-agent/frontend",
+    "qa": "npm run qa --silent -w @qa-agent/backend --",
+    "playwright:install": "npx playwright install chromium",
+    "dev:api": "npm run dev -w @qa-agent/backend",
+    "dev:web": "npm run dev -w @qa-agent/frontend"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "playwright-core@1.63.0": true
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3"
+  }
+}
