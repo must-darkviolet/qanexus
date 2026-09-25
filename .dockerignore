@@ -1,0 +1,15 @@
+**/node_modules
+**/dist
+**/.next
+.git
+.env
+.env.*
+.vercel
+data
+workspaces
+artifacts
+docs
+sample-app
+examples
+packages/frontend
+packages/backend/:memory:

@@ -15,3 +15,5 @@ docs/
 # sample-app is its own git repository: the demo needs its commit history to
 # show change detection working. Track it as a submodule, or drop its .git
 # directory if you want it committed as plain files.
+.vercel
+.env*

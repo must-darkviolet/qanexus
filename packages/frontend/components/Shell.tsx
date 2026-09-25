@@ -43,7 +43,7 @@ export function Shell({ children, crumb }: { children: ReactNode; crumb?: ReactN
     <div className="app plain">
       <div className="main">
         <header className="topbar">
-          <a href="/" className="brand" style={{ padding: 0 }}>
+          <a href="/dashboard" className="brand" style={{ padding: 0 }}>
             <span className="brand-logo"><IconBranch size={17} /></span>
             <span>
               <div className="brand-name">QA PR Review</div>
@@ -51,10 +51,10 @@ export function Shell({ children, crumb }: { children: ReactNode; crumb?: ReactN
             </span>
           </a>
           <nav className="crumbs" aria-label="Breadcrumb">
-            {pathname !== '/' && (
+            {pathname !== '/dashboard' && (
               <>
                 <span className="sep">/</span>
-                <a href="/">Repositories</a>
+                <a href="/dashboard">Repositories</a>
                 {crumb && <><span className="sep">/</span><span className="current">{crumb}</span></>}
               </>
             )}

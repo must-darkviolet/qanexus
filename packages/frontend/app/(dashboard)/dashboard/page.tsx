@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Shell, type SystemStatus } from '@/components/Shell';
-import { Badge, EmptyState, Loading, Notice, PageHeader, Panel, StatCard } from '@/components/ui';
-import { IconBranch, IconGit, IconPlus, IconShield, IconPlay } from '@/components/icons';
+import { Badge, EmptyState, Loading, Modal, Notice, PageHeader, Panel, StatCard, Toast } from '@/components/ui';
+import { IconBranch, IconGit, IconPlus, IconShield, IconPlay, IconSettings, IconX } from '@/components/icons';
 import { errorText } from '@/lib/format';
 
 interface Project {
   id: string; name: string; repoUrl: string; owner: string; repo: string;
   branch: string; testBaseUrl: string | null; isPrivate: boolean; lastAnalyzedCommit: string | null;
+  hasStoredToken: boolean;
 }
 
 export default function HomePage() {
@@ -18,6 +19,9 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [form, setForm] = useState({ repoUrl: '', name: '', branch: 'main', testBaseUrl: '', githubToken: '' });
+  const [editing, setEditing] = useState<Project | null>(null);
+  const [deleting, setDeleting] = useState<Project | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -113,7 +117,13 @@ export default function HomePage() {
                   <td><Badge mono>{p.branch}</Badge></td>
                   <td className="mono">{p.testBaseUrl ?? <span className="muted">default</span>}</td>
                   <td className="mono">{p.lastAnalyzedCommit ? p.lastAnalyzedCommit.slice(0, 8) : <span className="muted">never</span>}</td>
-                  <td style={{ textAlign: 'right' }}>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button type="button" className="ghost" onClick={() => setEditing(p)} title={`Edit ${p.name}`}>
+                      <IconSettings size={14} /> Edit
+                    </button>{' '}
+                    <button type="button" className="ghost" style={{ color: 'var(--bad)' }} onClick={() => setDeleting(p)} title={`Delete ${p.name}`}>
+                      <IconX size={14} /> Delete
+                    </button>{' '}
                     <a className="ghost" href={`/projects/${p.id}`}>Pull requests →</a>
                   </td>
                 </tr>
@@ -122,6 +132,22 @@ export default function HomePage() {
           </table>
         </Panel>
       )}
+
+      {editing && (
+        <EditProjectModal
+          project={editing}
+          onClose={() => setEditing(null)}
+          onSaved={async (name) => { setEditing(null); setToast(`Saved ${name}.`); await load(); }}
+        />
+      )}
+      {deleting && (
+        <DeleteProjectModal
+          project={deleting}
+          onClose={() => setDeleting(null)}
+          onDeleted={async (name) => { setDeleting(null); setToast(`Removed ${name}.`); await load(); }}
+        />
+      )}
+      <Toast message={toast} onDone={() => setToast(null)} />
 
       <Panel title="Connect a repository" icon={<IconPlus />} hint="A GitHub URL, owner/name, or a path on this machine.">
         <form onSubmit={connect} className="stack">
@@ -165,5 +191,140 @@ export default function HomePage() {
         </ul>
       </Panel>
     </Shell>
+  );
+}
+
+/**
+ * Corrects a connected repository's settings. The repository itself can't be
+ * changed (its review history belongs to it); connect a new one instead.
+ * A blank token field keeps the stored token.
+ */
+function EditProjectModal({ project, onClose, onSaved }: {
+  project: Project; onClose: () => void; onSaved: (name: string) => void | Promise<void>;
+}) {
+  const [form, setForm] = useState({
+    name: project.name,
+    branch: project.branch,
+    testBaseUrl: project.testBaseUrl ?? '',
+    githubToken: '',
+    removeToken: false,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.name.trim()) { setError('Give the repository a name.'); return; }
+    setSaving(true);
+    setError(null);
+    try {
+      await api.patch(`/projects/${project.id}`, {
+        name: form.name.trim(),
+        branch: form.branch.trim() || 'main',
+        // An empty value clears it, so the default application URL is used.
+        testBaseUrl: form.testBaseUrl.trim(),
+        ...(form.removeToken ? { githubToken: '' } : form.githubToken.trim() ? { githubToken: form.githubToken.trim() } : {}),
+      });
+      await onSaved(form.name.trim());
+    } catch (e) {
+      setError(errorText(e));
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={`Edit ${project.name}`}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" onClick={onClose} disabled={saving}>Cancel</button>
+          <button type="submit" form="edit-project" className="primary" disabled={saving}>
+            {saving ? 'Saving…' : 'Save changes'}
+          </button>
+        </>
+      }
+    >
+      <form id="edit-project" onSubmit={save} className="stack">
+        {error && <Notice tone="bad" onClose={() => setError(null)}>{error}</Notice>}
+        <label className="field">
+          <span>Repository <small className="muted">can't be changed</small></span>
+          <input value={project.repoUrl} disabled />
+        </label>
+        <label className="field">
+          <span>Name</span>
+          <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
+        </label>
+        <label className="field">
+          <span>Branch</span>
+          <input value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} placeholder="main" />
+        </label>
+        <label className="field">
+          <span>Application URL <small className="muted">leave empty to use the default</small></span>
+          <input value={form.testBaseUrl} onChange={(e) => setForm({ ...form, testBaseUrl: e.target.value })} placeholder="http://localhost:3000" />
+        </label>
+        <label className="field">
+          <span>
+            GitHub token{' '}
+            <small className="muted">{project.hasStoredToken ? 'a token is stored; leave empty to keep it' : 'none stored'}</small>
+          </span>
+          <input type="password" value={form.githubToken} disabled={form.removeToken}
+            onChange={(e) => setForm({ ...form, githubToken: e.target.value })}
+            placeholder={project.hasStoredToken ? '•••••••• (unchanged)' : 'ghp_… — stored encrypted, never shown again'} autoComplete="off" />
+        </label>
+        {project.hasStoredToken && (
+          <label className="checkbox">
+            <input type="checkbox" checked={form.removeToken}
+              onChange={(e) => setForm({ ...form, removeToken: e.target.checked, githubToken: '' })} />
+            <span>Remove the stored token</span>
+          </label>
+        )}
+      </form>
+    </Modal>
+  );
+}
+
+/** Removes a repository and everything recorded for it, after confirmation. */
+function DeleteProjectModal({ project, onClose, onDeleted }: {
+  project: Project; onClose: () => void; onDeleted: (name: string) => void | Promise<void>;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const remove = async () => {
+    setDeleting(true);
+    setError(null);
+    try {
+      await api.del(`/projects/${project.id}`);
+      await onDeleted(project.name);
+    } catch (e) {
+      setError(errorText(e));
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={`Delete ${project.name}?`}
+      onClose={onClose}
+      footer={
+        <>
+          <button type="button" onClick={onClose} disabled={deleting}>Cancel</button>
+          <button type="button" className="danger" onClick={remove} disabled={deleting}>
+            {deleting ? 'Deleting…' : 'Delete repository'}
+          </button>
+        </>
+      }
+    >
+      {error && <Notice tone="bad" onClose={() => setError(null)}>{error}</Notice>}
+      <p>
+        This removes <strong>{project.name}</strong> <span className="muted mono">({project.repoUrl})</span> from
+        the dashboard, along with its pull request reviews, test results and stored token.
+      </p>
+      <p className="muted" style={{ marginBottom: 0 }}>
+        Nothing on GitHub is changed, and comments already posted on pull requests stay. This can't be undone;
+        you can connect the repository again, but its history won't come back.
+      </p>
+    </Modal>
   );
 }

@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').cpSync('src/db/migrations','dist/db/migrations',{recursive:true})\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "migrate": "tsx src/db/migrate.ts",
     "test": "tsx --test tests/*.test.ts",

@@ -160,6 +160,7 @@ export async function deleteProject(id: string): Promise<void> {
   const db = await getDb();
   // Cascade by hand so the schema stays portable across both engines.
   for (const table of [
+    'pr_reviews', 'impact_reports',
     'evidence', 'failures', 'test_results', 'healing_proposals', 'traceability',
     'generated_tests', 'scenarios', 'business_rules', 'app_map', 'features',
     'applications', 'repo_changes', 'repo_snapshots', 'memory_entries',
